@@ -345,6 +345,54 @@ func (this *Client) VerifySign(data url.Values) (ok bool, err error) {
 	return verifySign(data, publicKey)
 }
 
+func (this *Client) VerifyResult(resultInfo string) (result map[string]interface{}, err error) {
+	var d map[string]interface{}
+
+	err = json.Unmarshal([]byte(resultInfo), &d)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var rspName string
+	for k := range d {
+		if strings.HasSuffix(k, kResponseSuffix) {
+			rspName = k
+			break
+		}
+	}
+
+	if rspName == "" {
+		return nil, ErrSignNotFound
+	}
+
+	var content string
+	var certSN string
+	var sign string
+
+	var rspIndex = strings.LastIndex(resultInfo, rspName)
+
+	content, certSN, sign = parseJSONSource(resultInfo, rspName, rspIndex)
+	if sign == "" {
+		var errRsp *ErrorRsp
+		if err = json.Unmarshal([]byte(content), &errRsp); err != nil {
+			return nil, err
+		}
+		return nil, errRsp
+	}
+
+	publicKey, err := this.getAliPayPublicKey(certSN)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = verifyData([]byte(content), sign, publicKey)
+	if err != nil {
+		return nil, err
+	}
+	return d[rspName].(map[string]interface{}), nil
+}
+
 func (this *Client) getAliPayPublicKey(certSN string) (key *rsa.PublicKey, err error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -439,7 +487,7 @@ func parseJSONSource(rawData string, nodeName string, nodeIndex int) (content, c
 	if signIndex > 0 {
 		var signStartIndex = signIndex + len(kSignNodeName) + 4
 		sign = rawData[signStartIndex:]
-		var signEndIndex = strings.LastIndex(sign, "\"")
+		var signEndIndex = strings.Index(sign, "\"")
 		sign = sign[:signEndIndex]
 	}
 
