@@ -495,6 +495,32 @@ func (c *Client) VerifySign(values url.Values) (err error) {
 	return verifier.VerifyValues(values, signBytes, nsign.WithIgnore(kFieldSign, kFieldSignType, kFieldAlyPayCertSN))
 }
 
+func (c *Client) VerifyResult(ctx context.Context, result string) (resultData map[string]string, err error) {
+	var d map[string]json.RawMessage
+
+	if err = json.Unmarshal([]byte(result), &d); err != nil {
+		return nil, err
+	}
+
+	var bizFieldName string
+	for k := range d {
+		if strings.HasSuffix(k, kResponseSuffix) {
+			bizFieldName = k
+			break
+		}
+	}
+
+	if bizFieldName == "" {
+		return nil, ErrBadResponse
+	}
+
+	if err = c.decode(ctx, []byte(result), bizFieldName, true, &resultData); err != nil {
+		return nil, err
+	}
+
+	return resultData, nil
+}
+
 func (c *Client) getVerifier(certSN string) (verifier Verifier, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
